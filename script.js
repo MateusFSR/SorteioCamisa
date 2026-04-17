@@ -17,6 +17,7 @@ const closeModalButton = document.getElementById("close-modal-button");
 const participants = [];
 let isDrawing = false;
 let currentRotation = 0;
+let autoSaveTimeoutId = null;
 const STORAGE_KEY = "sorteio-camiseta-brasil-participants-v1";
 const remoteSync = window.REMOTE_SYNC || {};
 
@@ -62,6 +63,21 @@ function getCloudEndpoint() {
 
 function setCloudStatus(message) {
   cloudStatus.textContent = `Status da nuvem: ${message}`;
+}
+
+function queueAutoCloudSave() {
+  if (!(isSupabaseConfigured() || getCloudEndpoint())) {
+    return;
+  }
+
+  if (autoSaveTimeoutId) {
+    clearTimeout(autoSaveTimeoutId);
+  }
+
+  autoSaveTimeoutId = setTimeout(() => {
+    saveParticipantsToCloud();
+    autoSaveTimeoutId = null;
+  }, 900);
 }
 
 function saveParticipantsToLocalStorage() {
@@ -355,6 +371,7 @@ function addParticipant(name, number) {
   participants.push({ name, number });
   renderParticipants();
   saveParticipantsToLocalStorage();
+  queueAutoCloudSave();
 }
 
 function drawWinner() {
@@ -468,6 +485,7 @@ resetButton.addEventListener("click", () => {
   resultText.textContent = "Nenhum sorteio realizado ainda.";
   buildWheel();
   saveParticipantsToLocalStorage();
+  queueAutoCloudSave();
 });
 
 buildWheel();
@@ -475,6 +493,14 @@ loadParticipantsFromLocalStorage();
 loadParticipantsFromCloud(false).then((loaded) => {
   if (!loaded) {
     loadParticipantsFromRepositoryFile();
+  }
+});
+
+window.addEventListener("beforeunload", () => {
+  if (autoSaveTimeoutId) {
+    clearTimeout(autoSaveTimeoutId);
+    autoSaveTimeoutId = null;
+    saveParticipantsToCloud();
   }
 });
 
