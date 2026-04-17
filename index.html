@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sorteio 1 a 100</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1 class="main-title">SORTEIO CAMISETA DO BRASIL</h1>
+      <p class="subtitle">Cadastre o nome da pessoa e o número escolhido.</p>
+
+      <section class="card result highlight-result">
+        <h2>Resultado</h2>
+        <div id="roulette-display" class="roulette-display">Aguardando sorteio...</div>
+        <p id="result-text">Nenhum sorteio realizado ainda.</p>
+      </section>
+
+      <form id="entry-form" class="card">
+        <label for="name">Nome da pessoa</label>
+        <input id="name" type="text" placeholder="Ex.: Maria" required />
+
+        <label for="number">Número escolhido (1 a 100)</label>
+        <input id="number" type="number" min="1" max="100" placeholder="Ex.: 42" required />
+
+        <button type="submit">Adicionar participante</button>
+      </form>
+
+      <section class="card">
+        <h2>Participantes</h2>
+        <ul id="participants-list"></ul>
+      </section>
+
+      <section class="card actions">
+        <button id="draw-button" type="button">Sortear vencedor</button>
+        <button id="reset-button" type="button" class="secondary">Limpar tudo</button>
+      </section>
+
+      <section class="card cloud-toolbar">
+        <p id="cloud-status">Status da nuvem: não configurado.</p>
+        <div class="cloud-buttons">
+          <button id="save-cloud-button" type="button">Salvar</button>
+          <button id="load-cloud-button" type="button" class="secondary">Carregar</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Roleta</h2>
+        <div class="wheel-wrapper">
+          <div class="pointer"></div>
+          <div id="wheel" class="wheel"></div>
+        </div>
+      </section>
+    </main>
+
+    <div id="winner-modal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <h2>Temos um vencedor!</h2>
+        <p id="winner-modal-text"></p>
+        <button id="close-modal-button" type="button">Fechar</button>
+      </div>
+    </div>
+
+    <script src="remote-config.js"></script>
+    <script src="script.js"></script>
+  </body>
+</html>
