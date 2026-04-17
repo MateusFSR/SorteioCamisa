@@ -8,16 +8,20 @@ const resultText = document.getElementById("result-text");
 const rouletteDisplay = document.getElementById("roulette-display");
 const wheel = document.getElementById("wheel");
 const saveCloudButton = document.getElementById("save-cloud-button");
-const loadCloudButton = document.getElementById("load-cloud-button");
-const cloudStatus = document.getElementById("cloud-status");
+const toastNotification = document.getElementById("toast-notification");
 const winnerModal = document.getElementById("winner-modal");
 const winnerModalText = document.getElementById("winner-modal-text");
 const closeModalButton = document.getElementById("close-modal-button");
+const confirmModal = document.getElementById("confirm-modal");
+const confirmModalCancel = document.getElementById("confirm-modal-cancel");
+const confirmModalConfirm = document.getElementById("confirm-modal-confirm");
+const availableNumbersDiv = document.getElementById("available-numbers");
 
 const participants = [];
 let isDrawing = false;
 let currentRotation = 0;
 let autoSaveTimeoutId = null;
+let toastTimeoutId = null;
 const STORAGE_KEY = "sorteio-camiseta-brasil-participants-v1";
 const remoteSync = window.REMOTE_SYNC || {};
 
@@ -33,7 +37,6 @@ function getSupabaseRestEndpoint() {
   if (!isSupabaseConfigured()) {
     return "";
   }
-
   const baseUrl = String(remoteSync.supabaseUrl || "").trim().replace(/\/+$/, "");
   const table = encodeURIComponent(String(remoteSync.supabaseTable || "").trim());
   return `${baseUrl}/rest/v1/${table}`;
@@ -49,31 +52,20 @@ function getSupabaseHeaders(extra = {}) {
   };
 }
 
-function getCloudEndpoint() {
-  const baseUrl = String(remoteSync.databaseUrl || "").trim();
-  if (!baseUrl) {
-    return "";
-  }
-
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
-  const authToken = String(remoteSync.authToken || "").trim();
-  const authSuffix = authToken ? `?auth=${encodeURIComponent(authToken)}` : "";
-  return `${normalizedBase}/participants.json${authSuffix}`;
-}
-
 function setCloudStatus(message) {
-  cloudStatus.textContent = `Status da nuvem: ${message}`;
+  if (!toastNotification) return;
+  toastNotification.textContent = `☁️ ${message}`;
+  toastNotification.classList.add("visible");
+  if (toastTimeoutId) clearTimeout(toastTimeoutId);
+  toastTimeoutId = setTimeout(() => {
+    toastNotification.classList.remove("visible");
+    toastTimeoutId = null;
+  }, 2600);
 }
 
 function queueAutoCloudSave() {
-  if (!(isSupabaseConfigured() || getCloudEndpoint())) {
-    return;
-  }
-
-  if (autoSaveTimeoutId) {
-    clearTimeout(autoSaveTimeoutId);
-  }
-
+  if (!isSupabaseConfigured()) return;
+  if (autoSaveTimeoutId) clearTimeout(autoSaveTimeoutId);
   autoSaveTimeoutId = setTimeout(() => {
     saveParticipantsToCloud();
     autoSaveTimeoutId = null;
@@ -86,15 +78,11 @@ function saveParticipantsToLocalStorage() {
 
 function loadParticipantsFromLocalStorage() {
   const saved = localStorage.getItem(STORAGE_KEY);
-  if (!saved) {
-    return;
-  }
+  if (!saved) return;
 
   try {
     const parsed = JSON.parse(saved);
-    if (!Array.isArray(parsed)) {
-      return;
-    }
+    if (!Array.isArray(parsed)) return;
 
     const seenNumbers = new Set();
     const sanitized = parsed.filter((item) => {
@@ -106,10 +94,7 @@ function loadParticipantsFromLocalStorage() {
         item.number >= 1 &&
         item.number <= 100 &&
         !seenNumbers.has(item.number);
-
-      if (isValid) {
-        seenNumbers.add(item.number);
-      }
+      if (isValid) seenNumbers.add(item.number);
       return isValid;
     });
 
@@ -117,15 +102,13 @@ function loadParticipantsFromLocalStorage() {
     participants.push(...sanitized.map((item) => ({ name: item.name.trim(), number: item.number })));
     renderParticipants();
   } catch (error) {
+    console.error("Erro ao carregar localStorage:", error);
     localStorage.removeItem(STORAGE_KEY);
   }
 }
 
 function sanitizeParticipants(items) {
-  if (!Array.isArray(items)) {
-    throw new Error("Formato inválido de participantes.");
-  }
-
+  if (!Array.isArray(items)) return [];
   const seenNumbers = new Set();
   return items
     .map((item) => ({ name: String(item.name || "").trim(), number: Number(item.number) }))
@@ -141,161 +124,98 @@ function sanitizeParticipants(items) {
     });
 }
 
-function applyParticipants(newParticipants, message) {
-  participants.length = 0;
-  participants.push(...newParticipants);
-  renderParticipants();
-  saveParticipantsToLocalStorage();
-  resultText.textContent = message;
-  rouletteDisplay.textContent = "Aguardando sorteio...";
-}
-
 async function saveParticipantsToCloud() {
-  if (isSupabaseConfigured()) {
-    const endpoint = getSupabaseRestEndpoint();
-    if (!endpoint) {
-      setCloudStatus("não configurado. Edite remote-config.js.");
-      alert("Configure o arquivo remote-config.js para salvar na nuvem.");
+  const endpoint = getSupabaseRestEndpoint();
+  if (!endpoint) {
+    setCloudStatus("não configurado.");
+    return;
+  }
+
+  try {
+    setCloudStatus("salvando no Supabase...");
+    const payload = participants.map((p) => ({ name: p.name, number: p.number }));
+
+    // Busca todos os registros existentes no Supabase
+    console.log("Sincronizando com Supabase...");
+    const getRes = await fetch(`${endpoint}?select=number,name`, {
+      method: "GET",
+      headers: getSupabaseHeaders(),
+      cache: "no-store",
+    });
+
+    if (!getRes.ok) {
+      const getErrorText = await getRes.text();
+      console.error("Get falhou:", getRes.status, getErrorText);
+      setCloudStatus("erro ao buscar dados do Supabase.");
       return;
     }
 
-    try {
-      setCloudStatus("salvando no Supabase...");
-      const payload = participants.map((participant) => ({
-        name: participant.name,
-        number: participant.number,
-      }));
+    const existingRecords = await getRes.json();
+    const existingMap = new Map(existingRecords.map(r => [r.number, r.name]));
+    
+    // Separa em novos, atualizações e deletados
+    const toInsert = payload.filter(p => !existingMap.has(p.number));
+    const toUpdate = payload.filter(p => existingMap.has(p.number) && existingMap.get(p.number) !== p.name);
+    const existingNumbers = new Set(existingRecords.map(r => r.number));
+    const currentNumbers = new Set(payload.map(p => p.number));
+    const toDelete = existingRecords.filter(r => !currentNumbers.has(r.number));
 
-      const response = await fetch(`${endpoint}?on_conflict=number`, {
-        method: "POST",
-        headers: getSupabaseHeaders({
-          Prefer: "resolution=merge-duplicates,return=minimal",
-        }),
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        throw new Error("Falha ao salvar no Supabase.");
-      }
-
-      setCloudStatus("salvo no Supabase com sucesso.");
-    } catch (error) {
-      setCloudStatus("erro ao salvar no Supabase.");
-      alert("Não foi possível salvar no Supabase.");
-    }
-    return;
-  }
-
-  const endpoint = getCloudEndpoint();
-  if (!endpoint) {
-    setCloudStatus("não configurado. Edite remote-config.js.");
-    alert("Configure o arquivo remote-config.js para salvar na nuvem.");
-    return;
-  }
-
-  try {
-    setCloudStatus("salvando...");
-    const response = await fetch(endpoint, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        version: 1,
-        updatedAt: new Date().toISOString(),
-        participants,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error("Falha ao salvar na nuvem.");
-    }
-
-    setCloudStatus("salvo com sucesso.");
-  } catch (error) {
-    setCloudStatus("erro ao salvar.");
-    alert("Não foi possível salvar na nuvem.");
-  }
-}
-
-async function loadParticipantsFromCloud(showFeedback = true) {
-  if (isSupabaseConfigured()) {
-    const endpoint = getSupabaseRestEndpoint();
-    if (!endpoint) {
-      setCloudStatus("não configurado. Edite remote-config.js.");
-      return false;
-    }
-
-    try {
-      if (showFeedback) {
-        setCloudStatus("carregando do Supabase...");
-      }
-
-      const response = await fetch(`${endpoint}?select=name,number&order=number.asc`, {
-        method: "GET",
-        headers: getSupabaseHeaders(),
-        cache: "no-store",
-      });
-      if (!response.ok) {
-        throw new Error("Falha ao carregar do Supabase.");
-      }
-
-      const incoming = await response.json();
-      const sanitized = sanitizeParticipants(incoming);
-
-      if (sanitized.length === 0) {
-        if (showFeedback) {
-          setCloudStatus("sem participantes salvos no Supabase.");
+    // Delete registros removidos
+    if (toDelete.length > 0) {
+      console.log("Deletando", toDelete.length, "registros removidos...");
+      for (const record of toDelete) {
+        const deleteRes = await fetch(`${endpoint}?number=eq.${record.number}`, {
+          method: "DELETE",
+          headers: getSupabaseHeaders(),
+        });
+        if (!deleteRes.ok) {
+          console.warn(`Aviso: Falha ao deletar número ${record.number}`);
         }
-        return false;
       }
+    }
 
-      applyParticipants(sanitized, "Participantes carregados do Supabase.");
-      setCloudStatus("carregado do Supabase com sucesso.");
-      return true;
-    } catch (error) {
-      if (showFeedback) {
-        setCloudStatus("erro ao carregar do Supabase.");
-        alert("Não foi possível carregar do Supabase.");
+    // Insert novos registros
+    if (toInsert.length > 0) {
+      console.log("Inserindo", toInsert.length, "novo(s) registro(s)...");
+      const insertRes = await fetch(endpoint, {
+        method: "POST",
+        headers: getSupabaseHeaders(),
+        body: JSON.stringify(toInsert),
+      });
+
+      if (!insertRes.ok) {
+        const errorText = await insertRes.text();
+        console.error("Insert falhou:", insertRes.status, errorText);
+        setCloudStatus("erro ao salvar no Supabase.");
+        return;
       }
-      return false;
-    }
-  }
-
-  const endpoint = getCloudEndpoint();
-  if (!endpoint) {
-    setCloudStatus("não configurado. Edite remote-config.js.");
-    return false;
-  }
-
-  try {
-    if (showFeedback) {
-      setCloudStatus("carregando...");
     }
 
-    const response = await fetch(endpoint, { method: "GET", cache: "no-store" });
-    if (!response.ok) {
-      throw new Error("Falha ao carregar da nuvem.");
-    }
+    // Update registros modificados
+    if (toUpdate.length > 0) {
+      console.log("Atualizando", toUpdate.length, "registro(s)...");
+      for (const record of toUpdate) {
+        const updateRes = await fetch(`${endpoint}?number=eq.${record.number}`, {
+          method: "PATCH",
+          headers: getSupabaseHeaders(),
+          body: JSON.stringify({ name: record.name }),
+        });
 
-    const parsed = await response.json();
-    const incoming = Array.isArray(parsed?.participants) ? parsed.participants : [];
-    const sanitized = sanitizeParticipants(incoming);
-
-    if (sanitized.length === 0) {
-      if (showFeedback) {
-        setCloudStatus("sem participantes salvos na nuvem.");
+        if (!updateRes.ok) {
+          console.warn(`Aviso: Falha ao atualizar número ${record.number}`);
+        }
       }
-      return false;
     }
 
-    applyParticipants(sanitized, "Participantes carregados da nuvem.");
-    setCloudStatus("carregado com sucesso.");
-    return true;
+    if (toInsert.length === 0 && toUpdate.length === 0 && toDelete.length === 0) {
+      console.log("Sem alterações para sincronizar");
+    }
+
+    setCloudStatus(payload.length === 0 ? "lista limpa no Supabase." : "salvo no Supabase com sucesso.");
+    console.log("Supabase sincronizado com sucesso");
   } catch (error) {
-    if (showFeedback) {
-      setCloudStatus("erro ao carregar.");
-      alert("Não foi possível carregar da nuvem.");
-    }
-    return false;
+    console.error("Erro ao sincronizar:", error);
+    setCloudStatus("erro ao sincronizar com Supabase.");
   }
 }
 
@@ -308,9 +228,23 @@ function closeWinnerModal() {
   winnerModal.classList.add("hidden");
 }
 
+function openConfirmModal(callback) {
+  confirmModal.classList.remove("hidden");
+  confirmModalConfirm.onclick = () => {
+    confirmModal.classList.add("hidden");
+    callback();
+  };
+  confirmModalCancel.onclick = () => {
+    confirmModal.classList.add("hidden");
+  };
+}
+
+function closeConfirmModal() {
+  confirmModal.classList.add("hidden");
+}
+
 function buildWheel() {
   wheel.innerHTML = "";
-
   if (participants.length === 0) {
     wheel.style.background = "#0f172a";
     return;
@@ -319,10 +253,8 @@ function buildWheel() {
   const angleStep = 360 / participants.length;
   const colors = ["#1e3a8a", "#1d4e89", "#1e40af", "#1f3f75", "#1d355f", "#172554"];
   const gradientParts = participants.map((_, index) => {
-    const start = index * angleStep;
-    const end = start + angleStep;
     const color = colors[index % colors.length];
-    return `${color} ${start}deg ${end}deg`;
+    return `${color} ${index * angleStep}deg ${(index + 1) * angleStep}deg`;
   });
 
   wheel.style.background = `conic-gradient(${gradientParts.join(", ")})`;
@@ -337,17 +269,38 @@ function buildWheel() {
   });
 }
 
+function renderAvailableNumbers() {
+  const selectedNumbers = new Set(participants.map((p) => p.number));
+  const availableNumbers = [];
+  for (let i = 1; i <= 100; i++) {
+    if (!selectedNumbers.has(i)) availableNumbers.push(i);
+  }
+
+  if (availableNumbers.length === 0) {
+    availableNumbersDiv.innerHTML = "<p style='text-align: center; margin: 0;'>Todos os números foram selecionados!</p>";
+    return;
+  }
+
+  availableNumbersDiv.innerHTML = "";
+  const container = document.createElement("div");
+  container.className = "numbers-grid";
+  availableNumbers.forEach((number) => {
+    const square = document.createElement("div");
+    square.className = "number-square";
+    square.textContent = number;
+    container.appendChild(square);
+  });
+  availableNumbersDiv.appendChild(container);
+}
+
 function renderParticipants() {
   participantsList.innerHTML = "";
-
-  participants
-    .sort((a, b) => a.number - b.number)
-    .forEach((participant) => {
-      const li = document.createElement("li");
-      li.textContent = `${participant.name} escolheu o número ${participant.number}`;
-      participantsList.appendChild(li);
-    });
-
+  participants.sort((a, b) => a.number - b.number).forEach((participant) => {
+    const li = document.createElement("li");
+    li.textContent = `${participant.name} escolheu o número ${participant.number}`;
+    participantsList.appendChild(li);
+  });
+  renderAvailableNumbers();
   buildWheel();
 }
 
@@ -380,9 +333,7 @@ function drawWinner() {
     return;
   }
 
-  if (isDrawing) {
-    return;
-  }
+  if (isDrawing) return;
 
   isDrawing = true;
   drawButton.disabled = true;
@@ -416,32 +367,8 @@ function drawWinner() {
   }, 4700);
 }
 
-function loadParticipantsFromObject(parsed) {
-  const incoming = Array.isArray(parsed?.participants) ? parsed.participants : parsed;
-  const sanitized = sanitizeParticipants(incoming);
-  applyParticipants(sanitized, "Participantes carregados do arquivo.");
-}
-
-async function loadParticipantsFromRepositoryFile() {
-  if (participants.length > 0) {
-    return;
-  }
-
-  try {
-    const response = await fetch("./participantes.json", { cache: "no-store" });
-    if (!response.ok) {
-      return;
-    }
-    const parsed = await response.json();
-    loadParticipantsFromObject(parsed);
-  } catch (error) {
-    // Sem arquivo padrão disponível, segue com localStorage.
-  }
-}
-
 form.addEventListener("submit", (event) => {
   event.preventDefault();
-
   const name = nameInput.value.trim();
   const number = Number(numberInput.value);
 
@@ -463,38 +390,45 @@ form.addEventListener("submit", (event) => {
 
 drawButton.addEventListener("click", drawWinner);
 saveCloudButton.addEventListener("click", saveParticipantsToCloud);
-loadCloudButton.addEventListener("click", () => loadParticipantsFromCloud(true));
 closeModalButton.addEventListener("click", closeWinnerModal);
 winnerModal.addEventListener("click", (event) => {
-  if (event.target === winnerModal) {
-    closeWinnerModal();
-  }
+  if (event.target === winnerModal) closeWinnerModal();
 });
 
-resetButton.addEventListener("click", () => {
-  if (isDrawing) {
-    return;
-  }
-
-  participants.length = 0;
-  participantsList.innerHTML = "";
-  wheel.style.transform = "rotate(0deg)";
-  wheel.style.transition = "transform 0ms linear";
-  currentRotation = 0;
-  rouletteDisplay.textContent = "Aguardando sorteio...";
-  resultText.textContent = "Nenhum sorteio realizado ainda.";
-  buildWheel();
-  saveParticipantsToLocalStorage();
-  queueAutoCloudSave();
+confirmModal.addEventListener("click", (event) => {
+  if (event.target === confirmModal) closeConfirmModal();
 });
 
+resetButton.addEventListener("click", async () => {
+  if (isDrawing) return;
+
+  openConfirmModal(async () => {
+    console.log("Limpando tudo...");
+    participants.length = 0;
+    participantsList.innerHTML = "";
+    wheel.style.transform = "rotate(0deg)";
+    wheel.style.transition = "transform 0ms linear";
+    currentRotation = 0;
+    rouletteDisplay.textContent = "Aguardando sorteio...";
+    resultText.textContent = "Nenhum sorteio realizado ainda.";
+    buildWheel();
+    renderAvailableNumbers();
+    
+    localStorage.removeItem(STORAGE_KEY);
+    saveParticipantsToLocalStorage();
+    
+    // Tenta deletar do Supabase também
+    await saveParticipantsToCloud();
+    console.log("Tudo limpo!");
+  });
+});
+
+// INICIALIZAÇÃO
+console.log("Carregando aplicação...");
 buildWheel();
 loadParticipantsFromLocalStorage();
-loadParticipantsFromCloud(false).then((loaded) => {
-  if (!loaded) {
-    loadParticipantsFromRepositoryFile();
-  }
-});
+
+console.log("Participantes carregados:", participants.length);
 
 window.addEventListener("beforeunload", () => {
   if (autoSaveTimeoutId) {
@@ -504,7 +438,7 @@ window.addEventListener("beforeunload", () => {
   }
 });
 
-if (isSupabaseConfigured() || getCloudEndpoint()) {
+if (isSupabaseConfigured()) {
   setCloudStatus("configurado.");
 } else {
   setCloudStatus("não configurado. Edite remote-config.js.");
