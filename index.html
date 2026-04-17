@@ -37,14 +37,6 @@
         <button id="reset-button" type="button" class="secondary">Limpar tudo</button>
       </section>
 
-      <section class="card cloud-toolbar">
-        <p id="cloud-status">Status da nuvem: não configurado.</p>
-        <div class="cloud-buttons">
-          <button id="save-cloud-button" type="button">Salvar</button>
-          <button id="load-cloud-button" type="button" class="secondary">Carregar</button>
-        </div>
-      </section>
-
       <section class="card">
         <h2>Roleta</h2>
         <div class="wheel-wrapper">
@@ -61,6 +53,14 @@
         <button id="close-modal-button" type="button">Fechar</button>
       </div>
     </div>
+
+    <aside class="floating-cloud-panel">
+      <p id="cloud-status">Status da nuvem: não configurado.</p>
+      <div class="floating-cloud-actions">
+        <button id="save-cloud-button" type="button">Salvar agora</button>
+        <button id="load-cloud-button" type="button" class="secondary">Sincronizar</button>
+      </div>
+    </aside>
 
     <script src="remote-config.js"></script>
     <script src="script.js"></script>
