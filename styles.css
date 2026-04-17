@@ -117,25 +117,7 @@ button:hover {
   margin: 0;
   color: #8fa8c7;
   font-weight: 600;
-}
-
-.cloud-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.cloud-buttons {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.cloud-buttons button {
-  flex: 0 1 auto;
-  min-width: 96px;
-  padding: 8px 12px;
+  font-size: 13px;
 }
 
 .wheel-wrapper {
@@ -210,23 +192,45 @@ button:hover {
   text-align: center;
 }
 
-@media (max-width: 680px) {
-  .cloud-toolbar {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .cloud-buttons {
-    width: 100%;
-  }
-
-  .cloud-buttons button {
-    flex: 1 1 140px;
-  }
-}
-
 .roulette-display.spinning {
   animation: pulseBlue 0.28s infinite;
+}
+
+.floating-cloud-panel {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 40;
+  width: min(340px, calc(100vw - 24px));
+  background: rgba(8, 15, 28, 0.94);
+  border: 1px solid #1a3352;
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(2, 6, 23, 0.65);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+  backdrop-filter: blur(6px);
+}
+
+.floating-cloud-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.floating-cloud-actions button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+@media (max-width: 680px) {
+  .floating-cloud-panel {
+    right: 10px;
+    left: 10px;
+    width: auto;
+    bottom: 10px;
+  }
 }
 
 .modal-overlay {
