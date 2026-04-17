@@ -3,19 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SORTEIO CAMISA DO BRASIL</title>
+    <title>SORTEIO CAMISETA BRASIL</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🇧🇷</text></svg>" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main class="container">
-      <h1 class="main-title">SORTEIO CAMISETA DO BRASIL</h1>
+      <h1 class="main-title">🎯 SORTERIO CAMISETA BRASIL</h1>
       <p class="subtitle">Cadastre o nome da pessoa e o número escolhido.</p>
-
-      <section class="card result highlight-result">
-        <h2>Resultado</h2>
-        <div id="roulette-display" class="roulette-display">Aguardando sorteio...</div>
-        <p id="result-text">Nenhum sorteio realizado ainda.</p>
-      </section>
 
       <form id="entry-form" class="card">
         <label for="name">Nome da pessoa</label>
@@ -32,9 +27,9 @@
         <ul id="participants-list"></ul>
       </section>
 
-      <section class="card actions">
-        <button id="draw-button" type="button">Sortear vencedor</button>
-        <button id="reset-button" type="button" class="secondary">Limpar tudo</button>
+      <section class="card">
+        <h2>Números Disponíveis</h2>
+        <div id="available-numbers"></div>
       </section>
 
       <section class="card">
@@ -43,6 +38,12 @@
           <div class="pointer"></div>
           <div id="wheel" class="wheel"></div>
         </div>
+      </section>
+
+      <section class="card result">
+        <h2>Resultado</h2>
+        <div id="roulette-display" class="roulette-display">Aguardando sorteio...</div>
+        <p id="result-text">Nenhum sorteio realizado ainda.</p>
       </section>
     </main>
 
@@ -54,13 +55,21 @@
       </div>
     </div>
 
-    <aside class="floating-cloud-panel">
-      <p id="cloud-status">Status da nuvem: não configurado.</p>
-      <div class="floating-cloud-actions">
-        <button id="save-cloud-button" type="button">Salvar agora</button>
-        <button id="load-cloud-button" type="button" class="secondary">Sincronizar</button>
+    <div id="confirm-modal" class="modal-overlay hidden">
+      <div class="modal-card">
+        <h2>Limpar tudo?</h2>
+        <p id="confirm-modal-text">Tem certeza que deseja limpar TUDO? Esta ação não pode ser desfeita.</p>
+        <div class="modal-actions">
+          <button id="confirm-modal-cancel" type="button" class="modal-button-secondary">Cancelar</button>
+          <button id="confirm-modal-confirm" type="button" class="modal-button-danger">Limpar</button>
+        </div>
       </div>
-    </aside>
+    </div>
+
+    <button id="draw-button" class="draw-icon-button" type="button" title="Sortear vencedor">🎲</button>
+    <button id="save-cloud-button" class="save-icon-button" type="button" title="Salvar na nuvem">☁️</button>
+    <button id="reset-button" class="reset-icon-button" type="button" title="Limpar tudo">🗑️</button>
+    <div id="toast-notification" class="toast-notification" aria-live="polite" aria-atomic="true"></div>
 
     <script src="remote-config.js"></script>
     <script src="script.js"></script>
