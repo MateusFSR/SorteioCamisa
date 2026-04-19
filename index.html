@@ -3,62 +3,116 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SORTEIO CAMISETA BRASIL</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🇧🇷</text></svg>" />
+    <title>Sorteio Camiseta Brasil</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>"
+    />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <main class="container">
-      <h1 class="main-title">🎯 SORTERIO CAMISETA BRASIL</h1>
-      <p class="subtitle">Cadastre o nome da pessoa e o número escolhido.</p>
+    <div class="app-shell">
+      <header class="hero">
+        <div class="hero-badge">Sorteio premium</div>
+        <h1 class="hero-title">Sorteio Camiseta Brasil</h1>
+        <p class="hero-subtitle">
+          Escolha os números, registre os compradores e faça o sorteio em uma segunda tela.
+        </p>
+      </header>
 
-      <form id="entry-form" class="card">
-        <label for="name">Nome da pessoa</label>
-        <input id="name" type="text" placeholder="Ex.: Maria" required />
+      <main class="app-main">
+        <section id="numbers-screen" class="screen">
+          <div class="panel panel-highlight">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Tela principal</p>
+                <h2 class="panel-title">Grade de Números</h2>
+              </div>
+              <button id="go-to-draw-button" class="primary-button" type="button">SORTEIO</button>
+            </div>
 
-        <label for="number">Número escolhido (1 a 100)</label>
-        <input id="number" type="number" min="1" max="100" placeholder="Ex.: 42" required />
+            <div class="stats-row">
+              <article class="stat-card">
+                <span class="stat-label">Disponíveis</span>
+                <strong id="available-count" class="stat-value">100</strong>
+              </article>
+              <article class="stat-card">
+                <span class="stat-label">Reservados</span>
+                <strong id="reserved-count" class="stat-value">0</strong>
+              </article>
+            </div>
+          </div>
 
-        <button type="submit">Adicionar participante</button>
-      </form>
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Seleção rápida</p>
+                <h2 class="panel-title">Números 1 a 100</h2>
+              </div>
+              <p class="panel-hint">Toque em um número verde para registrar o comprador.</p>
+            </div>
 
-      <section class="card">
-        <h2>Participantes</h2>
-        <ul id="participants-list"></ul>
-      </section>
+            <div id="numbers-grid" class="numbers-grid" aria-live="polite"></div>
+          </section>
+        </section>
 
-      <section class="card">
-        <h2>Números Disponíveis</h2>
-        <div id="available-numbers"></div>
-      </section>
+        <section id="draw-screen" class="screen hidden">
+          <div class="panel panel-highlight">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Tela de sorteio</p>
+                <h2 class="panel-title">Participantes confirmados</h2>
+              </div>
+              <button id="back-button" class="secondary-button" type="button">Voltar</button>
+            </div>
+          </div>
 
-      <section class="card">
-        <h2>Roleta</h2>
-        <div class="wheel-wrapper">
-          <div class="pointer"></div>
-          <div id="wheel" class="wheel"></div>
-        </div>
-      </section>
+          <div class="draw-layout">
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <p class="eyebrow">Lista organizada</p>
+                  <h2 class="panel-title">Nome + Número</h2>
+                </div>
+              </div>
+              <div id="participants-empty" class="empty-state">
+                Nenhum participante cadastrado ainda.
+              </div>
+              <ul id="participants-list" class="participants-list"></ul>
+            </section>
 
-      <section class="card result">
-        <h2>Resultado</h2>
-        <div id="roulette-display" class="roulette-display">Aguardando sorteio...</div>
-        <p id="result-text">Nenhum sorteio realizado ainda.</p>
-      </section>
-    </main>
+            <section class="panel panel-draw">
+              <p class="eyebrow">Momento do sorteio</p>
+              <h2 class="panel-title">Roleta ao vivo</h2>
 
-    <div id="winner-modal" class="modal-overlay hidden">
-      <div class="modal-card">
-        <h2>Temos um vencedor!</h2>
-        <p id="winner-modal-text"></p>
-        <button id="close-modal-button" type="button">Fechar</button>
-      </div>
+              <div class="wheel-shell">
+                <div class="wheel-pointer"></div>
+                <div id="wheel" class="wheel"></div>
+              </div>
+
+              <div id="roulette-display" class="roulette-display">Aguardando início...</div>
+              <p id="result-text" class="draw-helper">
+                Quando quiser, toque em GIRAR ROLETA para começar.
+              </p>
+
+              <button id="draw-button" class="draw-button" type="button">GIRAR ROLETA</button>
+
+              <div id="winner-highlight" class="winner-highlight hidden">
+                <span class="winner-emoji">🎉</span>
+                <p class="winner-label">Vencedor</p>
+                <h3 id="winner-name" class="winner-name">-</h3>
+                <p id="winner-number" class="winner-number">Número -</p>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
     </div>
 
     <div id="confirm-modal" class="modal-overlay hidden">
       <div class="modal-card">
         <h2>Limpar tudo?</h2>
-        <p id="confirm-modal-text">Tem certeza que deseja limpar TUDO? Esta ação não pode ser desfeita.</p>
+        <p id="confirm-modal-text">Tem certeza que deseja apagar todos os participantes?</p>
         <div class="modal-actions">
           <button id="confirm-modal-cancel" type="button" class="modal-button-secondary">Cancelar</button>
           <button id="confirm-modal-confirm" type="button" class="modal-button-danger">Limpar</button>
@@ -66,8 +120,41 @@
       </div>
     </div>
 
-    <button id="draw-button" class="draw-icon-button" type="button" title="Sortear vencedor">🎲</button>
-    <button id="save-cloud-button" class="save-icon-button" type="button" title="Salvar na nuvem">☁️</button>
+    <div id="buyer-modal" class="modal-overlay hidden">
+      <div class="modal-card modal-card-form">
+        <h2>Registrar comprador</h2>
+        <p id="buyer-modal-description">Informe o nome para reservar este número.</p>
+        <form id="buyer-form" class="buyer-form">
+          <label for="buyer-name-input" class="buyer-label">Nome do comprador</label>
+          <input id="buyer-name-input" class="buyer-input" type="text" maxlength="80" autocomplete="off" />
+          <div class="modal-actions">
+            <button id="buyer-cancel-button" type="button" class="modal-button-secondary">Cancelar</button>
+            <button type="submit" class="primary-button">Salvar número</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="winner-modal" class="modal-overlay hidden">
+      <div class="modal-card winner-modal-card">
+        <div class="winner-modal-emoji">🎉</div>
+        <p class="winner-modal-label">Temos um vencedor</p>
+        <h2 id="winner-modal-name" class="winner-modal-name">-</h2>
+        <p id="winner-modal-number" class="winner-modal-number">Número -</p>
+        <button id="winner-modal-close" type="button" class="primary-button">Fechar</button>
+      </div>
+    </div>
+
+    <button id="reset-button" class="reset-icon-button" type="button" title="Limpar tudo">🗑️</button>
+    <button
+      id="overview-button"
+      class="overview-icon-button"
+      type="button"
+      title="Mostrar todos os números"
+      aria-pressed="false"
+    >
+      #️⃣
+    </button>
     <button id="reset-button" class="reset-icon-button" type="button" title="Limpar tudo">🗑️</button>
     <div id="toast-notification" class="toast-notification" aria-live="polite" aria-atomic="true"></div>
 
