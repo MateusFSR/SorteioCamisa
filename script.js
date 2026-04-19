@@ -22,7 +22,8 @@ let isDrawing = false;
 let currentRotation = 0;
 let autoSaveTimeoutId = null;
 let toastTimeoutId = null;
-const STORAGE_KEY = "sorteio-camiseta-brasil-participants-v1";
+let syncPollingIntervalId = null;
+let lastSyncTimestamp = null;
 const remoteSync = window.REMOTE_SYNC || {};
 
 function isSupabaseConfigured() {
@@ -52,6 +53,32 @@ function getSupabaseHeaders(extra = {}) {
   };
 }
 
+function getSupabaseUserId() {
+  return String(remoteSync.supabaseUserId || "default").trim();
+}
+
+function getSupabaseUserRecordEndpoint() {
+  const endpoint = getSupabaseRestEndpoint();
+  if (!endpoint) return "";
+  return `${endpoint}?select=data_json,updated_at&user_id=eq.${encodeURIComponent(getSupabaseUserId())}`;
+}
+
+function getSupabaseUpsertEndpoint() {
+  const endpoint = getSupabaseRestEndpoint();
+  if (!endpoint) return "";
+  return `${endpoint}?on_conflict=user_id`;
+}
+
+function getSupabasePayload() {
+  return {
+    user_id: getSupabaseUserId(),
+    data_json: {
+      participants: participants.map((p) => ({ name: p.name, number: p.number })),
+    },
+    updated_at: Date.now(),
+  };
+}
+
 function setCloudStatus(message) {
   if (!toastNotification) return;
   toastNotification.textContent = `☁️ ${message}`;
@@ -72,41 +99,6 @@ function queueAutoCloudSave() {
   }, 900);
 }
 
-function saveParticipantsToLocalStorage() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(participants));
-}
-
-function loadParticipantsFromLocalStorage() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (!saved) return;
-
-  try {
-    const parsed = JSON.parse(saved);
-    if (!Array.isArray(parsed)) return;
-
-    const seenNumbers = new Set();
-    const sanitized = parsed.filter((item) => {
-      const isValid =
-        item &&
-        typeof item.name === "string" &&
-        item.name.trim() &&
-        Number.isInteger(item.number) &&
-        item.number >= 1 &&
-        item.number <= 100 &&
-        !seenNumbers.has(item.number);
-      if (isValid) seenNumbers.add(item.number);
-      return isValid;
-    });
-
-    participants.length = 0;
-    participants.push(...sanitized.map((item) => ({ name: item.name.trim(), number: item.number })));
-    renderParticipants();
-  } catch (error) {
-    console.error("Erro ao carregar localStorage:", error);
-    localStorage.removeItem(STORAGE_KEY);
-  }
-}
-
 function sanitizeParticipants(items) {
   if (!Array.isArray(items)) return [];
   const seenNumbers = new Set();
@@ -125,7 +117,7 @@ function sanitizeParticipants(items) {
 }
 
 async function saveParticipantsToCloud() {
-  const endpoint = getSupabaseRestEndpoint();
+  const endpoint = getSupabaseUpsertEndpoint();
   if (!endpoint) {
     setCloudStatus("não configurado.");
     return;
@@ -133,89 +125,153 @@ async function saveParticipantsToCloud() {
 
   try {
     setCloudStatus("salvando no Supabase...");
-    const payload = participants.map((p) => ({ name: p.name, number: p.number }));
+    const payload = getSupabasePayload();
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: getSupabaseHeaders({
+        Prefer: "resolution=merge-duplicates,return=minimal",
+      }),
+      body: JSON.stringify(payload),
+    });
 
-    // Busca todos os registros existentes no Supabase
-    console.log("Sincronizando com Supabase...");
-    const getRes = await fetch(`${endpoint}?select=number,name`, {
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Erro ao salvar no Supabase:", response.status, errorText);
+      setCloudStatus("erro ao salvar no Supabase.");
+      return;
+    }
+
+    lastSyncTimestamp = JSON.stringify(payload.data_json.participants);
+    setCloudStatus(
+      payload.data_json.participants.length === 0
+        ? "lista limpa no Supabase."
+        : "salvo no Supabase com sucesso."
+    );
+  } catch (error) {
+    console.error("Erro ao sincronizar:", error);
+    setCloudStatus("erro ao sincronizar com Supabase.");
+  }
+}
+
+async function loadParticipantsFromCloud(showFeedback = true) {
+  const endpoint = getSupabaseUserRecordEndpoint();
+  if (!endpoint) {
+    if (showFeedback) setCloudStatus("não configurado.");
+    return false;
+  }
+
+  try {
+    if (showFeedback) setCloudStatus("carregando do Supabase...");
+    const response = await fetch(endpoint, {
       method: "GET",
       headers: getSupabaseHeaders(),
       cache: "no-store",
     });
 
-    if (!getRes.ok) {
-      const getErrorText = await getRes.text();
-      console.error("Get falhou:", getRes.status, getErrorText);
-      setCloudStatus("erro ao buscar dados do Supabase.");
+    if (!response.ok) {
+      const body = await response.text();
+      console.error("Falha ao carregar do Supabase - status", response.status, body);
+      throw new Error("Falha ao carregar do Supabase.");
+    }
+    const rows = await response.json();
+    if (!Array.isArray(rows) || rows.length === 0) {
+      if (showFeedback) setCloudStatus("sem participantes no Supabase.");
+      return false;
+    }
+
+    const row = rows[0];
+    const rawData = row?.data_json;
+    const rawParticipants = Array.isArray(rawData?.participants)
+      ? rawData.participants
+      : Array.isArray(rawData)
+      ? rawData
+      : [];
+    const sanitized = sanitizeParticipants(rawParticipants);
+    const incomingStr = JSON.stringify(sanitized);
+
+    if (sanitized.length === 0) {
+      lastSyncTimestamp = incomingStr;
+      if (showFeedback) setCloudStatus("sem participantes no Supabase.");
+      return false;
+    }
+
+    participants.length = 0;
+    participants.push(...sanitized);
+    renderParticipants();
+    resultText.textContent = "Participantes carregados do Supabase.";
+    rouletteDisplay.textContent = "Aguardando sorteio...";
+    lastSyncTimestamp = incomingStr;
+    if (showFeedback) setCloudStatus("carregado do Supabase com sucesso.");
+    return true;
+  } catch (error) {
+    console.error("Erro ao carregar:", error);
+    if (showFeedback) {
+      setCloudStatus("erro ao carregar do Supabase.");
+      if (error?.message) {
+        console.warn("Verifique se a tabela Supabase está criada e se o anon key tem permissão de leitura.");
+      }
+    }
+    return false;
+  }
+}
+
+async function syncFromCloudIfChanged() {
+  if (!isSupabaseConfigured()) return;
+  const endpoint = getSupabaseUserRecordEndpoint();
+  if (!endpoint) return;
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "GET",
+      headers: getSupabaseHeaders(),
+      cache: "no-store",
+    });
+
+    if (!response.ok) return;
+    const rows = await response.json();
+    if (!Array.isArray(rows) || rows.length === 0) {
+      lastSyncTimestamp = null;
       return;
     }
 
-    const existingRecords = await getRes.json();
-    const existingMap = new Map(existingRecords.map(r => [r.number, r.name]));
-    
-    // Separa em novos, atualizações e deletados
-    const toInsert = payload.filter(p => !existingMap.has(p.number));
-    const toUpdate = payload.filter(p => existingMap.has(p.number) && existingMap.get(p.number) !== p.name);
-    const existingNumbers = new Set(existingRecords.map(r => r.number));
-    const currentNumbers = new Set(payload.map(p => p.number));
-    const toDelete = existingRecords.filter(r => !currentNumbers.has(r.number));
+    const rawData = rows[0]?.data_json;
+    const sanitized = sanitizeParticipants(
+      Array.isArray(rawData?.participants)
+        ? rawData.participants
+        : Array.isArray(rawData)
+        ? rawData
+        : []
+    );
+    const incomingStr = JSON.stringify(sanitized);
 
-    // Delete registros removidos
-    if (toDelete.length > 0) {
-      console.log("Deletando", toDelete.length, "registros removidos...");
-      for (const record of toDelete) {
-        const deleteRes = await fetch(`${endpoint}?number=eq.${record.number}`, {
-          method: "DELETE",
-          headers: getSupabaseHeaders(),
-        });
-        if (!deleteRes.ok) {
-          console.warn(`Aviso: Falha ao deletar número ${record.number}`);
-        }
+    if (lastSyncTimestamp === null || incomingStr !== lastSyncTimestamp) {
+      lastSyncTimestamp = incomingStr;
+      const currentStr = JSON.stringify(participants.map((p) => ({ name: p.name, number: p.number })));
+      if (currentStr !== incomingStr) {
+        participants.length = 0;
+        participants.push(...sanitized);
+        renderParticipants();
+        resultText.textContent = sanitized.length === 0 ? "Lista sincronizada (vazia)." : "Sincronizado com nuvem.";
+        rouletteDisplay.textContent = "Aguardando sorteio...";
       }
     }
-
-    // Insert novos registros
-    if (toInsert.length > 0) {
-      console.log("Inserindo", toInsert.length, "novo(s) registro(s)...");
-      const insertRes = await fetch(endpoint, {
-        method: "POST",
-        headers: getSupabaseHeaders(),
-        body: JSON.stringify(toInsert),
-      });
-
-      if (!insertRes.ok) {
-        const errorText = await insertRes.text();
-        console.error("Insert falhou:", insertRes.status, errorText);
-        setCloudStatus("erro ao salvar no Supabase.");
-        return;
-      }
-    }
-
-    // Update registros modificados
-    if (toUpdate.length > 0) {
-      console.log("Atualizando", toUpdate.length, "registro(s)...");
-      for (const record of toUpdate) {
-        const updateRes = await fetch(`${endpoint}?number=eq.${record.number}`, {
-          method: "PATCH",
-          headers: getSupabaseHeaders(),
-          body: JSON.stringify({ name: record.name }),
-        });
-
-        if (!updateRes.ok) {
-          console.warn(`Aviso: Falha ao atualizar número ${record.number}`);
-        }
-      }
-    }
-
-    if (toInsert.length === 0 && toUpdate.length === 0 && toDelete.length === 0) {
-      console.log("Sem alterações para sincronizar");
-    }
-
-    setCloudStatus(payload.length === 0 ? "lista limpa no Supabase." : "salvo no Supabase com sucesso.");
-    console.log("Supabase sincronizado com sucesso");
   } catch (error) {
-    console.error("Erro ao sincronizar:", error);
-    setCloudStatus("erro ao sincronizar com Supabase.");
+    console.debug("Erro ao sincronizar:", error);
+  }
+}
+
+function startSyncPolling() {
+  if (!isSupabaseConfigured()) return;
+  if (syncPollingIntervalId !== null) return;
+  syncPollingIntervalId = setInterval(() => {
+    syncFromCloudIfChanged();
+  }, 3000);
+}
+
+function stopSyncPolling() {
+  if (syncPollingIntervalId !== null) {
+    clearInterval(syncPollingIntervalId);
+    syncPollingIntervalId = null;
   }
 }
 
@@ -323,7 +379,6 @@ function addParticipant(name, number) {
 
   participants.push({ name, number });
   renderParticipants();
-  saveParticipantsToLocalStorage();
   queueAutoCloudSave();
 }
 
@@ -414,9 +469,6 @@ resetButton.addEventListener("click", async () => {
     buildWheel();
     renderAvailableNumbers();
     
-    localStorage.removeItem(STORAGE_KEY);
-    saveParticipantsToLocalStorage();
-    
     // Tenta deletar do Supabase também
     await saveParticipantsToCloud();
     console.log("Tudo limpo!");
@@ -426,11 +478,21 @@ resetButton.addEventListener("click", async () => {
 // INICIALIZAÇÃO
 console.log("Carregando aplicação...");
 buildWheel();
-loadParticipantsFromLocalStorage();
 
-console.log("Participantes carregados:", participants.length);
+// Tenta carregar do Supabase (sempre)
+loadParticipantsFromCloud(false).then((loadedFromCloud) => {
+  if (loadedFromCloud) {
+    console.log("Participantes carregados do Supabase:", participants.length);
+  } else {
+    console.log("Nenhum participante no Supabase.");
+  }
+});
+
+// Inicia sincronização automática a cada 3 segundos
+startSyncPolling();
 
 window.addEventListener("beforeunload", () => {
+  stopSyncPolling();
   if (autoSaveTimeoutId) {
     clearTimeout(autoSaveTimeoutId);
     autoSaveTimeoutId = null;
